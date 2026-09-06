@@ -507,16 +507,17 @@
   function money(n){ return n.toLocaleString('th-TH') + ' บาท'; }
 
   function loadSavedImages(){
-    menu.forEach(item => {
-      try{
-        Promise.resolve(window.storage && window.storage.get('menu-image:'+item.id)).then(res=>{
-          if(res && res.value){
-            item.img = res.value;
-            renderMenu();
-          }
-        }).catch(()=>{});
-      }catch(e){}
-    });
+    if(!SHEET_WEBHOOK_URL) return;
+    fetch(SHEET_WEBHOOK_URL + '?action=menu-images')
+      .then(res => res.json())
+      .then(map => {
+        let changed = false;
+        menu.forEach(item => {
+          if(map && map[item.id]){ item.img = map[item.id]; changed = true; }
+        });
+        if(changed) renderMenu();
+      })
+      .catch(()=>{ /* ถ้าเรียกไม่สำเร็จ ก็แสดงเมนูแบบยังไม่มีรูปตามปกติ */ });
   }
 
   function renderMenu(){
@@ -618,11 +619,22 @@
     reader.onload = (ev)=>{
       const item = menu.find(m => m.id === currentUploadId);
       if(item){
-        item.img = ev.target.result;
+        const dataUrl = ev.target.result;
+        item.img = dataUrl; // แสดงผลทันทีบนเครื่องคนอัปโหลด
         renderMenu();
-        try{
-          window.storage && window.storage.set('menu-image:'+item.id, ev.target.result).catch(()=>{});
-        }catch(err){}
+
+        // ส่งขึ้น Google Drive ของร้านผ่าน Apps Script เพื่อให้ลูกค้าทุกคนเห็นรูปเดียวกัน
+        const commaIdx = dataUrl.indexOf(',');
+        const base64 = dataUrl.substring(commaIdx + 1);
+        const mimeType = dataUrl.substring(5, dataUrl.indexOf(';'));
+        if(SHEET_WEBHOOK_URL){
+          fetch(SHEET_WEBHOOK_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify({ type:'menu-image', itemId: item.id, mimeType: mimeType, base64: base64 })
+          }).catch(()=>{});
+        }
       }
     };
     reader.readAsDataURL(file);
@@ -747,6 +759,7 @@
 
     const itemsText = lines.map(l => `${l.name} x${l.qty}`).join(', ');
     await submitOrderToSheet({
+      type: 'order',
       orderNum: orderNum,
       name: name,
       phone: phone,
