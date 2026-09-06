@@ -714,10 +714,24 @@
     });
   });
 
-  document.getElementById('confirmOrderBtn').addEventListener('click', ()=>{
+  const SHEET_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwYHlr9nTFrrnOeX1XyGHuy5gtydwfIBGe0y2cSlXatmROGnRAc60GVe24erutCwfW-/exec';
+
+  function submitOrderToSheet(payload){
+    if(!SHEET_WEBHOOK_URL) return Promise.resolve();
+    return fetch(SHEET_WEBHOOK_URL, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).catch(()=>{ /* silently ignore network errors so the customer flow isn't blocked */ });
+  }
+
+  document.getElementById('confirmOrderBtn').addEventListener('click', async ()=>{
     const name = document.getElementById('custName').value.trim();
     const phone = document.getElementById('custPhone').value.trim();
     const address = document.getElementById('custAddress').value.trim();
+    const note = document.getElementById('custNote').value.trim();
+    const deliveryTime = document.querySelector('#timeGroup input[name="time"]:checked').value;
     if(!name || !phone || !address){
       alert('กรุณากรอกชื่อ เบอร์โทร และที่อยู่จัดส่งให้ครบก่อนยืนยันคำสั่งซื้อ');
       return;
@@ -726,6 +740,23 @@
     const subtotal = lines.reduce((s,l)=>s + l.price*l.qty, 0);
     const total = subtotal + DELIVERY_FEE;
     const orderNum = 'KD' + Math.floor(Math.random()*9000 + 1000);
+
+    const confirmBtn = document.getElementById('confirmOrderBtn');
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'กำลังส่งคำสั่งซื้อ...';
+
+    const itemsText = lines.map(l => `${l.name} x${l.qty}`).join(', ');
+    await submitOrderToSheet({
+      orderNum: orderNum,
+      name: name,
+      phone: phone,
+      address: address,
+      items: itemsText + (note ? ` | หมายเหตุ: ${note}` : '') + ` | เวลาจัดส่ง: ${deliveryTime}`,
+      total: total
+    });
+
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'ยืนยันคำสั่งซื้อ';
 
     document.getElementById('orderNum').textContent = orderNum;
     document.getElementById('orderSummary').innerHTML = lines.map(l => `
